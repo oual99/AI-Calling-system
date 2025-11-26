@@ -19,9 +19,14 @@ API_BASE_URL = "https://api.vapi.ai"
 @st.cache_data
 def get_api_key():
     try:
-        with open("config.json", "r") as f:
-            config = json.load(f)
-        return config["vapi_api_key"]
+        # Check if config.json exists
+        if os.path.exists("config.json"):
+            with open("config.json", "r") as f:
+                config = json.load(f)
+            return config["vapi_api_key"]
+        else:
+            # Use Streamlit secrets
+            return st.secrets["vapi_api_key"]
     except FileNotFoundError:
         st.error("config.json not found. Please create it with your VAPI API key.")
         st.stop()
