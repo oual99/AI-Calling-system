@@ -1963,6 +1963,6 @@ voices:
   swedish:
     11labs:
       - name: "Sanna (Swedish)"
-        voiceId: "4xkuqar9myojhoac1nak"
-      - name: "Jonnas (Swedish)"
+        voiceId: "4xkUqaR9MYOJHoaC1Nak"
+      - name: "Jonas (Swedish)"
         voiceId: "e6OiUVixGLmvtdn2GJYE"

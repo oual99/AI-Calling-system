@@ -41,6 +41,15 @@ def get_assistant(assistant_id, api_key):
     response.raise_for_status()
     return response.json()
 
+# def update_assistant(assistant_id, api_key, data):
+#     url = f"{API_BASE_URL}/assistant/{assistant_id}"
+#     headers = {
+#         "Authorization": f"Bearer {api_key}",
+#         "Content-Type": "application/json"
+#     }
+#     response = requests.patch(url, headers=headers, json=data)
+#     response.raise_for_status()
+#     return response.json()
 def update_assistant(assistant_id, api_key, data):
     url = f"{API_BASE_URL}/assistant/{assistant_id}"
     headers = {
@@ -48,6 +57,12 @@ def update_assistant(assistant_id, api_key, data):
         "Content-Type": "application/json"
     }
     response = requests.patch(url, headers=headers, json=data)
+    
+    if response.status_code != 200:
+        # Print error details for debugging
+        print(f"Error response: {response.text}")
+        st.error(f"API Error: {response.text}")
+    
     response.raise_for_status()
     return response.json()
 
@@ -695,19 +710,61 @@ def main():
     
     # Preview section
     st.subheader("👁️ System Prompt Preview")
-    
-    preview_prompt = build_system_prompt(
-        selected_mode,
+
+    # Build the default prompt
+    default_prompt = build_system_prompt(
+        st.session_state.current_mode,
         st.session_state.owner_name,
         st.session_state.friend_name,
         st.session_state.relationship,
         st.session_state.whitelist_numbers
     )
+
+    # Initialize custom prompt in session state
+    if 'custom_prompt' not in st.session_state:
+        st.session_state.custom_prompt = default_prompt
+    if 'use_custom_prompt' not in st.session_state:
+        st.session_state.use_custom_prompt = False
+
+    # Option to use custom or auto-generated prompt
+    col_prompt1, col_prompt2 = st.columns([3, 1])
+
+    with col_prompt1:
+        use_custom = st.checkbox(
+            "✏️ Edit custom prompt",
+            value=st.session_state.use_custom_prompt,
+            help="Enable to manually edit the system prompt",
+            # key="use_custom_checkbox"
+        )
+        st.session_state.use_custom_prompt = use_custom
+
+    with col_prompt2:
+        if st.button("🔄 Reset to Default", key="reset_prompt_btn"):
+            st.session_state.custom_prompt = default_prompt
+            st.session_state.use_custom_prompt = False  # Also uncheck the checkbox
+            st.rerun()
+
+    # Show editable or read-only prompt
+    if st.session_state.use_custom_prompt:
+        # Update the session state value directly from text area
+        custom_prompt_value = st.text_area(
+            "Edit System Prompt",
+            value=st.session_state.custom_prompt,
+            height=400,
+            key="editable_prompt"
+        )
+        st.session_state.custom_prompt = custom_prompt_value
+        st.warning("⚠️ You are using a custom prompt. Changes to mode, names, or whitelist won't affect this prompt unless you reset it.")
+        prompt_to_use = custom_prompt_value
+    else:
+        st.session_state.custom_prompt = default_prompt  # Keep synced with default
+        with st.expander("View full system prompt", expanded=False):
+            st.code(default_prompt, language="text")
+        prompt_to_use = default_prompt
+
+    # Display prompt stats
+    st.info(f"📊 Prompt length: {len(prompt_to_use)} characters | {len(prompt_to_use.split())} words")
     
-    with st.expander("View full system prompt", expanded=False):
-        st.code(preview_prompt, language="text")
-    
-    st.info(f"📊 Prompt length: {len(preview_prompt)} characters | {len(preview_prompt.split())} words")
     # Update button
     st.markdown("---")
     
@@ -722,13 +779,17 @@ def main():
                 try:
                     with st.spinner("Updating assistant and transfer tool..."):
                         # Build the complete system prompt
-                        system_prompt = build_system_prompt(
-                            st.session_state.current_mode,
-                            st.session_state.owner_name,
-                            st.session_state.friend_name,
-                            st.session_state.relationship,
-                            st.session_state.whitelist_numbers
-                        )
+                        # Use custom prompt if enabled, otherwise build from settings
+                        if st.session_state.use_custom_prompt:
+                            system_prompt = st.session_state.custom_prompt
+                        else:
+                            system_prompt = build_system_prompt(
+                                st.session_state.current_mode,
+                                st.session_state.owner_name,
+                                st.session_state.friend_name,
+                                st.session_state.relationship,
+                                st.session_state.whitelist_numbers
+                            )
                         
                         # Use cached assistant data
                         current_assistant = st.session_state.cached_assistant
@@ -751,7 +812,7 @@ def main():
                             "transcriber": {
                                 "provider": "deepgram",
                                 "model": "nova-2" if st.session_state.selected_language == "English" else "nova-3",
-                                "language": "en" if st.session_state.selected_language == "English" else "Sv-SE"
+                                "language": "en" if st.session_state.selected_language == "English" else "sv-SE"
                             }
                         }
                         
@@ -768,18 +829,26 @@ def main():
                             current_tool = get_tool(st.session_state.transfer_tool_id, api_key)
                             
                             # Only update the fields we want to change
+                            # Prepare messages based on language
+                            if st.session_state.selected_language == "Swedish":
+                                owner_message = f"Jag kopplar ditt samtal till {st.session_state.owner_name}. Vänligen håll dig kvar på linjen."
+                                friend_message = f"Jag kopplar ditt samtal till {st.session_state.owner_name}s {st.session_state.relationship} {st.session_state.friend_name}. Vänligen håll dig kvar på linjen."
+                            else:  # English
+                                owner_message = f"I am forwarding your call to {st.session_state.owner_name}. Please stay on the line please."
+                                friend_message = f"I am forwarding your call to {st.session_state.owner_name}'s {st.session_state.relationship} {st.session_state.friend_name}. Please stay on the line please."
+
                             tool_update_data = {
                                 "destinations": [
                                     {
                                         "type": "number",
                                         "number": st.session_state.owner_phone,
-                                        "message": f"I am forwarding your call to {st.session_state.owner_name}. Please stay on the line please.",
+                                        "message": owner_message,
                                         "description": f"Use this destination when asked to forward the call to {st.session_state.owner_name}"
                                     },
                                     {
                                         "type": "number",
                                         "number": st.session_state.friend_phone,
-                                        "message": f"I am forwarding your call to {st.session_state.owner_name}'s {st.session_state.relationship} {st.session_state.friend_name}. Please stay on the line please.",
+                                        "message": friend_message,
                                         "description": f"Use this destination when asked to forward the call to {st.session_state.owner_name}'s {st.session_state.relationship} {st.session_state.friend_name}"
                                     }
                                 ]
@@ -800,7 +869,7 @@ def main():
                             # Don't fail the whole update if just the tool fails
                         
                         st.success("✅ Assistant and transfer tool updated successfully!")
-                        st.balloons()
+                        # st.balloons()
                         
                 except Exception as e:
                     st.error(f"❌ Error updating: {str(e)}")
